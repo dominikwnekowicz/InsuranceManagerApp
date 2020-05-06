@@ -1,0 +1,32 @@
+﻿<Window x:Class="InsuranceManagerApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:InsuranceManagerApp"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="450" Width="800">
+    <Grid>
+        <DataGrid x:Name="DataGrid" AutoGenerateColumns="False" HorizontalAlignment="Left" Height="auto" Margin="10,10,10,10" VerticalAlignment="Top" Width="auto">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="PESEL" Binding="{Binding PESEL}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Imię" Binding="{Binding FirstName}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Nazwisko" Binding="{Binding LastName}"></DataGridTextColumn>
+                <DataGridTemplateColumn Header="Data urodzenia">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <DatePicker SelectedDate="{Binding BirthDate, StringFormat=d}" BorderThickness="0"></DatePicker>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Komórka" Binding="{Binding CellPhone}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Domowy" Binding="{Binding HomePhone}"></DataGridTextColumn>
+                <DataGridTextColumn Header="E-mail" Binding="{Binding Email}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Adres" Binding="{Binding House}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Kod pocztowy" Binding="{Binding ZipCode}"></DataGridTextColumn>
+                <DataGridTextColumn Header="Miejscowość" Binding="{Binding City}"></DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+        <Button Content="Parse" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="5,5,5,5" Width="100" Height="25"  x:Name="ParseButton" Click="ParseButton_Click"/>
+    </Grid>
+</Window>
