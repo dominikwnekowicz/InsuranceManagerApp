@@ -65,11 +65,12 @@ namespace InsuranceManagerApp.Models
                 new Keyword { Id = 28, CompanyKrs = "6691", PropertyName = nameof(Customer.CellPhone), Word = "kom:" },
                 
                 //Allianz
-                new Keyword { Id = 29, CompanyKrs = "0000028261", PropertyName = "StartIndex", Word = "OŚWIADCZENIA UBEZPIECZAJĄCEGO" },
-                new Keyword { Id = 29, CompanyKrs = "0000028261", PropertyName = "FinishIndex", Word = "TWÓJ AGENT" },
-                new Keyword { Id = 31, CompanyKrs = "0000028261", PropertyName = nameof(Customer.PESEL), Word = "PESEL:" },
                 new Keyword { Id = 32, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "UBEZPIECZAJĄCY/WŁAŚCICIEL POJAZDU" },
-                new Keyword { Id = 35, CompanyKrs = "0000028261", PropertyName = nameof(Customer.CellPhone), Word = "tel.:" },
+                new Keyword { Id = 33, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "UBEZPIECZAJĄCY/WSPÓŁWŁAŚCICIEL" },
+                new Keyword { Id = 34, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "Ubezpieczający / Ubezpieczony / Właściciel pojazdu:  " },
+                new Keyword { Id = 35, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "Dane kontaktowe:" },
+                new Keyword { Id = 36, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "WSPÓŁWŁAŚCICIEL" },
+                new Keyword { Id = 37, CompanyKrs = "0000028261", PropertyName = nameof(Customer.LastName), Word = "tel.:" },
             };
         }
 

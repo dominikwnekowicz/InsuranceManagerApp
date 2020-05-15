@@ -22,6 +22,13 @@ namespace InsuranceManagerApp
         private List<Customer> customers = new List<Customer>();
         private List<Address> addresses = new List<Address>();
 
+        public class ProgressEventArgs
+        {
+            public int Progress { get; set; }
+        }
+
+        public event EventHandler<ProgressEventArgs> ProgressChanged;
+
         private static string ExtractTextFromPdf(string filePath)
         {
             PDDocument document = null;
@@ -53,8 +60,17 @@ namespace InsuranceManagerApp
         public ObservableCollection<CustomerDataViewModel> ParseFiles()
         {
             var filesList = GetListOfFiles();
-            foreach(var filePath in filesList)
+            var countParsedFiles = 0;
+            var progress = 0;
+            ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress });
+            foreach (var filePath in filesList)
             {
+                countParsedFiles++;
+                if(countParsedFiles * 100 / filesList.Count() > progress)
+                {
+                    progress = countParsedFiles * 100 / filesList.Count();
+                    ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress });
+                }
                 var documentText = ExtractTextFromPdf(filePath);
                 var documentLines = documentText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
                 documentText = documentText.ToLower();
@@ -138,16 +154,14 @@ namespace InsuranceManagerApp
                 {
                     customer = ParseCompensaPdf(documentLines, keywords);
                 }
-
+                else if (company.Name == "Allianz")
+                {
+                    customer = ParseAllianzPdf(documentLines, keywords);
+                }
             }
             catch
             {
                 return;
-            }
-
-            if( company.Name == "Allianz")
-            {
-                customer = ParseAllianzPdf(documentLines, keywords);
             }
 
             //cut phone number if too long or in bad type of phone
@@ -272,7 +286,8 @@ namespace InsuranceManagerApp
             var zipCode = RemoveBoundaryWhitespace(splittedAddress[0].Substring(0, index).ToUpper());
             var city = RemoveBoundaryWhitespace(splittedAddress[0].Substring(index+1).ToUpper());
             var house = RemoveBoundaryWhitespace(splittedAddress[1].ToUpper());
-            if (house.Contains(city)) house = house.Replace(city + " ", "");
+            if (house.Contains("UL. " + city)) house = house.Replace("UL. " + city + " ", "");
+            else if (house.Contains(city)) house = house.Replace(city + " ", "");
             var addressToGenerateHash = zipCode + city + house;
             var hash = GenerateHash(addressToGenerateHash);
             Address address = new Address()
@@ -605,7 +620,65 @@ namespace InsuranceManagerApp
 
         private Customer ParseAllianzPdf(List<string> documentLines, List<Keyword> keywords)
         {
-            throw new NotImplementedException();
+            string customerString = "";
+            for (int i = 0; i < documentLines.Count; i++)
+            {
+                foreach(var keyword in keywords)
+                {
+                    string text = "null";
+                    if (documentLines[i].Contains(keyword.Word) && !documentLines[i].Contains("509353195"))
+                    {
+                        var replaced = documentLines[i].Replace(keyword.Word, "");
+                        if (replaced.Replace(" ", "") == "")
+                        {
+                            text = documentLines[++i] + " " + documentLines[++i];
+                        }
+                        else
+                        {
+                            text = replaced;
+                        }
+                        if(keyword.Id == 36)
+                        {
+                            Console.WriteLine("Współwłaściciel" + text);
+                        }
+                        else if (!customerString.Contains(text)) customerString += ", " + text;
+
+                        break;
+                    }
+                }
+            }
+            var customerData = customerString.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var name = RemoveBoundaryWhitespace(customerData[0]);
+            var firstName = name.Split(' ')[0];
+            var lastName = name.Split(' ')[1];
+            var pesel = RemoveBoundaryWhitespace(customerData.First(d => d.ToLower().Contains("pesel")));
+            pesel = pesel.Remove(0, pesel.Length - 11);
+            string address = "";
+            string postOffice = "";
+            if (!customerData[2].Contains("data urodzenia"))
+            {
+                address = RemoveBoundaryWhitespace(customerData[2]);
+                postOffice = RemoveBoundaryWhitespace(customerData[3]);
+            }
+            else
+            {
+                address = RemoveBoundaryWhitespace(customerData[3]);
+                postOffice = RemoveBoundaryWhitespace(customerData[4]);
+            }
+            var fullAddress = postOffice + ", " + address;
+            var addressId = ParseAddress(fullAddress);
+            var phone = RemoveBoundaryWhitespace(customerData.FirstOrDefault(c => c.Contains("+")));
+
+            Customer customer = new Customer()
+            {
+                FirstName = firstName.ToUpper(),
+                LastName = lastName.ToUpper(),
+                PESEL = pesel,
+                AddressId = addressId,
+                CellPhone = phone
+            };
+
+            return customer;
         }
     }
 }
