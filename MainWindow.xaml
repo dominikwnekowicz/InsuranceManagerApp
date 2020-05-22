@@ -28,7 +28,9 @@
             </DataGrid.Columns>
         </DataGrid>
         <Button Content="Parse" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" Width="100" Height="26"  x:Name="ParseButton" Click="ParseButton_Click"/>
-        <ProgressBar x:Name="LoadingDataProgressBar" Visibility="Hidden" HorizontalAlignment="Left" Height="26" Margin="10,0,0,10" VerticalAlignment="Bottom" Width="600"/>
-        <Label Content="0%" x:Name="ProgressLabel" Visibility="Hidden" HorizontalAlignment="Left" Height="26" Margin="615,10,10,10" VerticalAlignment="Bottom"/>
+        <ProgressBar x:Name="LoadingDataProgressBar" Foreground="Turquoise" Background="PaleTurquoise"  Visibility="Hidden" HorizontalAlignment="Left" Height="26" Margin="10,0,0,10" VerticalAlignment="Bottom" Width="600"/>
+        <Label Content="0%" x:Name="ProgressLabel" Foreground="White" Visibility="Hidden" HorizontalAlignment="Left" Height="26" Margin="10,10,10,10" VerticalAlignment="Bottom"/>
+        <Label Content="Elementów: 0" x:Name="ElementsCountLabel" HorizontalAlignment="Left" Margin="10,10,10,10" Visibility="Visible" VerticalAlignment="Bottom" Height="26" />
+        <Label Content="Przybliżony czas: 0s" x:Name="EstimatedTimeLabel" Visibility="Hidden" Height="26" HorizontalAlignment="Left" Margin="615,10,10,10" VerticalAlignment="Bottom"/>
     </Grid>
 </Window>

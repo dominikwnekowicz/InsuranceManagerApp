@@ -1,4 +1,5 @@
-﻿using InsuranceManagerApp.ViewModels;
+﻿using com.sun.org.apache.xml.@internal.dtm.@ref;
+using InsuranceManagerApp.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -38,6 +39,9 @@ namespace InsuranceManagerApp
             LoadingDataProgressBar.Visibility = Visibility.Visible;
             ProgressLabel.Content = "0%";
             ProgressLabel.Visibility = Visibility.Visible;
+            EstimatedTimeLabel.Content = "Przybliżony czas: 0s";
+            EstimatedTimeLabel.Visibility = Visibility.Visible;
+            ElementsCountLabel.Visibility = Visibility.Hidden;
             ParseButton.IsEnabled = false;
             DataGrid.IsEnabled = false;
             var th = new Thread(() =>
@@ -50,6 +54,9 @@ namespace InsuranceManagerApp
                     DataGrid.IsEnabled = true;
                     LoadingDataProgressBar.Visibility = Visibility.Hidden;
                     ProgressLabel.Visibility = Visibility.Hidden;
+                    EstimatedTimeLabel.Visibility = Visibility.Hidden;
+                    ElementsCountLabel.Visibility = Visibility.Visible;
+                    ElementsCountLabel.Content = "Elementów: " + customerDatas.Count();
                 });
             });
             parsePdf.ProgressChanged += ParsePdf_ProgressChanged;
@@ -65,6 +72,11 @@ namespace InsuranceManagerApp
                 {
                     LoadingDataProgressBar.Value = e.Progress;
                     ProgressLabel.Content = e.Progress + "%";
+                }
+                if(e.TimeLeft >= 0)
+                {
+                    var time = TimeSpan.FromSeconds(e.TimeLeft);
+                    EstimatedTimeLabel.Content = "Przybliżony czas: " + time.Duration();
                 }
             }));
         }

@@ -1,4 +1,5 @@
-﻿using InsuranceManagerApp.Models;
+﻿using com.sun.org.apache.xpath.@internal.compiler;
+using InsuranceManagerApp.Models;
 using InsuranceManagerApp.ViewModels;
 using org.apache.pdfbox.pdmodel;
 using org.apache.pdfbox.util;
@@ -21,15 +22,17 @@ namespace InsuranceManagerApp
         PropertyInfo[] properties = typeof(Customer).GetProperties();
         private List<Customer> customers = new List<Customer>();
         private List<Address> addresses = new List<Address>();
+        private List<Exception> exceptions = new List<Exception>();
 
         public class ProgressEventArgs
         {
-            public int Progress { get; set; }
+            public int Progress { get; set; }//in percents
+            public int TimeLeft { get; set; }//in seconds
         }
 
         public event EventHandler<ProgressEventArgs> ProgressChanged;
 
-        private static string ExtractTextFromPdf(string filePath)
+        private string ExtractTextFromPdf(string filePath)
         {
             PDDocument document = null;
             try
@@ -39,6 +42,12 @@ namespace InsuranceManagerApp
                 var text = stripper.getText(document);
                 var whitespace = text.First(c => String.IsNullOrWhiteSpace(c.ToString()));
                 return text.Replace(whitespace, ' ');
+            }
+            catch(Exception ex)
+            {
+                var exception = new Exception(ex.Message + ": " + Path.GetFileName(filePath));
+                exceptions.Add(exception);
+                return null;
             }
             finally
             {
@@ -62,31 +71,57 @@ namespace InsuranceManagerApp
             var filesList = GetListOfFiles();
             var countParsedFiles = 0;
             var progress = 0;
-            ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress });
+            var timeLeft = filesList.Count() * 0.35;
+            ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) });
             foreach (var filePath in filesList)
             {
                 countParsedFiles++;
-                if(countParsedFiles * 100 / filesList.Count() > progress)
+                progress = countParsedFiles * 100 / filesList.Count();
+                timeLeft = (filesList.Count() - countParsedFiles) * 0.35;
+                ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) });
+
+                var documentText = "";
+                try
                 {
-                    progress = countParsedFiles * 100 / filesList.Count();
-                    ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress });
+                    documentText = ExtractTextFromPdf(filePath).Normalize();
                 }
-                var documentText = ExtractTextFromPdf(filePath);
+                catch(Exception ex)
+                {
+                    var exception = new Exception(ex + ": " + Path.GetFileName(filePath));
+                    exceptions.Add(exception);
+                    documentText = ExtractTextFromPdf(filePath);
+                }
                 var documentLines = documentText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
-                documentText = documentText.ToLower();
+
+                for (int i = 0; i < documentText.Length; i++)
+                {
+                    if (!char.IsLetterOrDigit(documentText[i]) || Char.IsWhiteSpace(documentText[i])) documentText = documentText.Replace(documentText[i].ToString(), "");
+                }
+                for(int l = 0; l < documentLines.Count; l++)
+                {
+                    for (int i = 0; i < documentLines[l].Count(); i++)
+                    {
+                        if (Char.IsWhiteSpace(documentLines[l][i])) documentLines[l] = documentLines[l].Replace(documentLines[l][i], ' ');
+                    }
+                }
                 var _company = new Company();
                 var companies = _company.GetCompanies();
                 Company company = new Company();
                 foreach(var item in companies)
                 {
-                    if(documentText.Contains(item.KRS) && documentText.Replace("-", " ").Contains(item.NIP) && documentText.Contains(item.Name.ToLower()))
+                    if(documentText.Contains(item.KRS) && documentText.Contains(item.NIP) && documentText.Contains(item.Name.ToLower()))
                     {
                         company = item;
                         break;
                     }
                 }
-                if(company != null && documentText != null) ParseData(documentLines, company);
+                if(company != null && documentText != null) ParseData(documentLines, Path.GetFileName(filePath), company);
             };//parsing evry file
+            foreach(var exception in exceptions)
+            {
+                Console.WriteLine(exception.Message);
+            }
+            Console.WriteLine("Błędów: " + exceptions.Count());
             var addressProps = typeof(Address).GetProperties();
             var viewModelProperties = typeof(CustomerDataViewModel).GetProperties();
             Customer customer = new Customer();
@@ -125,10 +160,10 @@ namespace InsuranceManagerApp
         
         
 
-        private void ParseData(List<string> documentLines, Company company)
+        private void ParseData(List<string> documentLines, string fileName, Company company)
         {
             var _keyword = new Keyword();
-            List<Keyword> keywords = _keyword.GetKeywords().Where(k => k.CompanyKrs == company.KRS).ToList();
+            List<Keyword> keywords = _keyword.GetKeywords().Where(k => k.CompanyId == company.Id).ToList();
 
             Customer customer = new Customer();
 
@@ -158,9 +193,31 @@ namespace InsuranceManagerApp
                 {
                     customer = ParseAllianzPdf(documentLines, keywords);
                 }
+                else if (company.Name == "AXA")
+                {
+                    customer = ParseAxaPdf(documentLines, keywords);
+                }
+                else if (company.Name == "EUROINS")
+                {
+                    customer = ParseEuroinsPdf(documentLines, keywords);
+                }
+                else if (company.Name == "Generali")
+                {
+                    customer = ParseGeneraliPdf(documentLines, keywords);
+                }
+                else if (company.Name == "GOTHAER")
+                {
+                    customer = ParseWienerPdf(documentLines, keywords);
+                }
+                else if (company.Name == "WIENER")
+                {
+                    customer = ParseWienerPdf(documentLines, keywords);
+                }
             }
-            catch
+            catch(Exception ex)
             {
+                var exception = new Exception(ex.Message + ": " + fileName);
+                exceptions.Add(exception);
                 return;
             }
 
@@ -180,13 +237,18 @@ namespace InsuranceManagerApp
                 customer.Id = GenerateHash(dataToGenerateId);
 
                 //add or update customer
-                if (customer != null) UpdateOrAddCustomer(customer);
+                UpdateOrAddCustomer(customer);
+            }
+            else
+            {
+                var ex = new Exception("Incomplete data: " + fileName);
+                exceptions.Add(ex);
             }
         }
 
         private void UpdateOrAddCustomer(Customer customer)
         {
-            var customerExist = CustomerExist(customer.Id);
+            var customerExist = CustomerExist(ref customer);
             if (!customerExist) customers.Add(customer);
             else
             {
@@ -203,12 +265,26 @@ namespace InsuranceManagerApp
             }
         }//update data if null or add customer if not exist
 
-        private bool CustomerExist(string id)
+        private bool CustomerExist(ref Customer customer)
         {
             bool status = false;
-            foreach(var customer in customers)
+            foreach(var item in customers)
             {
-                if (id == customer.Id) status = true;
+                if (customer.Id == item.Id)
+                {
+                    status = true;
+                    return status;
+                }
+                if(customer.PESEL != null && item.PESEL != null && customer.PESEL == item.PESEL)
+                {
+                    if(customer.PESEL.Length == 11 && item.PESEL.Length == 11)
+                    {
+                        status = true;
+                        customer.Id = item.Id;
+                        return status;
+                    }
+                    
+                }
             }
             return status;
         }//check if customer exist
@@ -251,7 +327,7 @@ namespace InsuranceManagerApp
             };
             string tmpNumber = null;
             var cellPhone = customer.CellPhone;
-            if (!String.IsNullOrEmpty(cellPhone))
+            if (!String.IsNullOrWhiteSpace(cellPhone))
             {
                 if(cellPhone.Length > 9) cellPhone = cellPhone.Substring(cellPhone.Length - 9);
                 if (!cellPhonePrefixes.Contains(cellPhone.Substring(0, 2)))
@@ -261,7 +337,7 @@ namespace InsuranceManagerApp
                 }
             }
             var homePhone = customer.HomePhone;
-            if (!String.IsNullOrEmpty(homePhone))
+            if (!String.IsNullOrWhiteSpace(homePhone))
             {
                 if(homePhone.Length > 9) homePhone = homePhone.Substring(homePhone.Length - 9);
                 if (cellPhonePrefixes.Contains(homePhone.Substring(0, 2)))
@@ -285,7 +361,19 @@ namespace InsuranceManagerApp
             var index = splittedAddress[0].IndexOf(' ');
             var zipCode = RemoveBoundaryWhitespace(splittedAddress[0].Substring(0, index).ToUpper());
             var city = RemoveBoundaryWhitespace(splittedAddress[0].Substring(index+1).ToUpper());
+            if (city.Contains(",")) city = city.Replace(",", "");
             var house = RemoveBoundaryWhitespace(splittedAddress[1].ToUpper());
+            if(city == "BRAK")
+            {
+                foreach (var item in addresses)
+                {
+                    if (item.ZipCode == zipCode)
+                    {
+                        city = item.City;
+                        break;
+                    }
+                }
+            }
             if (house.Contains("UL. " + city)) house = house.Replace("UL. " + city + " ", "");
             else if (house.Contains(city)) house = house.Replace(city + " ", "");
             var addressToGenerateHash = zipCode + city + house;
@@ -337,7 +425,7 @@ namespace InsuranceManagerApp
         //------------------------------------------------------------------------
         //Companies parse methods
 
-        private Customer ParseHdiPdf(List<string> documentLines, List<Keyword> keywords)
+        private Customer ParseHdiPdf(List<string> documentLines, List<Keyword> keywords)//parsing HDI/Warta files
         {
             Customer customer = new Customer();
 
@@ -403,9 +491,9 @@ namespace InsuranceManagerApp
                 }
             }
             return customer;
-        }//parsing HDI files
+        }
 
-        private Customer ParseResoPdf(List<string> documentLines, List<Keyword> keywords)
+        private Customer ParseResoPdf(List<string> documentLines, List<Keyword> keywords)//parsing RESO files
         {
             Customer customer = new Customer();
             var startIndex = documentLines.IndexOf(keywords[0].Word);
@@ -481,14 +569,14 @@ namespace InsuranceManagerApp
             }
 
             return customer;
-        }//parsing RESO files
+        }
 
-        private Customer ParseProamaPdf(List<string> documentLines, List<Keyword> keywords)
+        private Customer ParseProamaPdf(List<string> documentLines, List<Keyword> keywords)//parsing Proama files
         {
             Customer customer = new Customer();
 
             var customerDataString = documentLines.First(l => l.Contains(keywords.Last(k => k.PropertyName == nameof(customer.LastName)).Word));
-            var customerData = Regex.Split(customerDataString.Normalize(), "[,:] ").Where(w => !String.IsNullOrWhiteSpace(w)).ToList();
+            var customerData = Regex.Split(customerDataString, "[,:] ").Where(w => !String.IsNullOrWhiteSpace(w)).ToList();
 
             var properties = typeof(Customer).GetProperties();
             for(int index = 0; index < customerData.Count; index++)
@@ -544,7 +632,7 @@ namespace InsuranceManagerApp
             }
 
             return customer;
-        }//parsing Proama files
+        }
 
         private Customer ParseCompensaPdf(List<string> documentLines, List<Keyword> keywords)//parsing Compensa files
         {
@@ -618,7 +706,7 @@ namespace InsuranceManagerApp
             return customer;
         }
 
-        private Customer ParseAllianzPdf(List<string> documentLines, List<Keyword> keywords)
+        private Customer ParseAllianzPdf(List<string> documentLines, List<Keyword> keywords)// parsing Allianz files
         {
             string customerString = "";
             for (int i = 0; i < documentLines.Count; i++)
@@ -677,6 +765,285 @@ namespace InsuranceManagerApp
                 AddressId = addressId,
                 CellPhone = phone
             };
+
+            return customer;
+        }
+        
+        private Customer ParseAxaPdf(List<string> documentLines, List<Keyword> keywords)// parsing Axa files
+        {
+            Customer customer = new Customer();
+            var startIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[0].Word)));
+            var finishIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[1].Word)));
+
+            var customerData = documentLines.GetRange(startIndex + 1, finishIndex - startIndex - 1);
+
+            for (int index = 0; index < customerData.Count; index++)
+            {
+                foreach (var keyword in keywords)
+                {
+                    if (customerData[index].Contains(keyword.Word))
+                    {
+                        dynamic propertyValue;
+                        foreach (var property in properties)
+                        {
+                            if (property.Name == keyword.PropertyName)
+                            {
+                                if (property.GetValue(customer) != null) break;
+
+                                if (customerData[index].Length > keyword.Word.Length) index--;
+                                propertyValue = customerData[++index].Replace(keyword.Word, "");
+
+                                if (propertyValue == "") break;
+
+                                if (property.Name == nameof(customer.AddressId))
+                                {
+                                    string[] splittedAddress = Regex.Split(propertyValue, ", ");
+                                    string postOffice = "";
+                                    string home = "";
+                                    if(splittedAddress.Length > 2)
+                                    {
+                                        postOffice = RemoveBoundaryWhitespace(splittedAddress[2]);
+                                        home = RemoveBoundaryWhitespace(splittedAddress[1]) + " " + RemoveBoundaryWhitespace(splittedAddress[0].Replace(splittedAddress[1], ""));
+                                    }
+                                    else
+                                    {
+                                        postOffice = RemoveBoundaryWhitespace(splittedAddress[1]);
+                                        if(!postOffice.Contains(" ")) postOffice = postOffice + " " + "BRAK";
+                                        home = RemoveBoundaryWhitespace(splittedAddress[0]);
+                                    }
+
+                                    var address = postOffice + ", " + home; //poczta, adres
+                                    propertyValue = ParseAddress(address);
+                                }
+
+                                if (property.Name == nameof(customer.BirthDate))
+                                {
+                                    var date = Regex.Match(propertyValue, "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]").Value;
+                                    propertyValue = DateTime.Parse(date);
+                                }
+
+                                if (property.Name == nameof(customer.Email)) propertyValue = propertyValue.ToLower();
+
+                                if (property.Name == nameof(customer.CellPhone)) propertyValue = RemoveBoundaryWhitespace(propertyValue).Substring(0, 9);
+
+
+                                if (property.Name == nameof(customer.LastName))
+                                {
+                                    var name = propertyValue.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                    customer.FirstName = name[0].ToUpper();
+                                    customer.LastName = name[1].ToUpper();
+                                }
+                                else
+                                {
+                                    if (propertyValue.GetType() == typeof(string))
+                                    {
+                                        propertyValue = RemoveBoundaryWhitespace(propertyValue);
+                                        if (propertyValue.ToLower() == "brak") propertyValue = null;
+                                    }
+                                    property.SetValue(customer, propertyValue);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                }
+            }
+
+            return customer;
+        }
+
+        private Customer ParseEuroinsPdf(List<string> documentLines, List<Keyword> keywords)// parsing Euroins files
+        {
+            Customer customer = new Customer();
+
+            var startIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[0].Word)));
+            var finishIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[1].Word)));
+
+            string[] wordsToSplit = new string[keywords.Count-2];
+
+            string customerDataString = "";
+            for (int i = startIndex + 1; i < finishIndex; i++)
+            {
+                customerDataString += documentLines[i];
+                if (documentLines[i].Last() != '-') customerDataString += " ";
+            }
+
+            for(int i = 2; i<keywords.Count; i++)
+            {
+                wordsToSplit[i - 2] = keywords[i].Word;
+            }
+
+            var customerData = customerDataString.Split(wordsToSplit, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+            //FirstName, LastName
+            var name = RemoveBoundaryWhitespace(customerData[0]);
+            customer.FirstName = name.Split( new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)[0].ToUpper();
+            customer.LastName = name.Split( new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)[1].ToUpper();
+
+            //PESEL
+            customer.PESEL = RemoveBoundaryWhitespace(customerData[1]);
+
+            //PHONE
+            customer.CellPhone = RemoveBoundaryWhitespace(customerData[2]);
+
+            //Address
+            var address = RemoveBoundaryWhitespace(customerData[3]);
+            var zipCode = Regex.Match(address, "[0-9][0-9]-[0-9][0-9][0-9]").Value;
+            address = address.Replace(zipCode + " ", "");
+            var index = address.IndexOfAny(new char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9' });
+            var house = RemoveBoundaryWhitespace(address.Substring(index));
+            address = RemoveBoundaryWhitespace(address.Replace(house, ""));
+            var city = "BRAK";
+            var splittedAddress = address.Split(' ');
+            if(splittedAddress.Length >= 2 && splittedAddress[0] == splittedAddress[splittedAddress.Length/2])
+            {
+                city = "";
+                for(int i = 0; i < Math.Ceiling(Convert.ToDecimal(splittedAddress.Length / 2)); i++)
+                {
+                    city += splittedAddress[i];
+                }
+            }
+            else
+            {
+                house = address + " " + house;
+            }
+
+            address = zipCode + " " + city + ", " + house;
+            customer.AddressId = ParseAddress(address);
+
+            //BirthDate
+            customer.BirthDate = DateTime.Parse(RemoveBoundaryWhitespace(customerData[4]));
+
+
+            //Email
+            customer.Email = RemoveBoundaryWhitespace(customerData[5]);
+
+            return customer;
+        }
+
+        private Customer ParseGeneraliPdf(List<string> documentLines, List<Keyword> keywords)// parsing Generali files
+        {
+            Customer customer = new Customer();
+            string customerDataString = "";
+            foreach(var keyword in keywords.Where(k => k.PropertyName == nameof(customer.LastName)))
+            {
+                if(documentLines.Where(l => l.Contains(keyword.Word)).Any())
+                {
+                    if (keyword.Word == keywords[0].Word) customerDataString = keyword.Word + " " + documentLines[documentLines.IndexOf(keyword.Word)+1];
+                    else customerDataString = documentLines.First(l => l.Contains(keyword.Word));
+                    if (keyword == keywords[2]) customerDataString = customerDataString.Replace(keyword.Word, keyword.Word + ":");
+                    break;
+                }
+            }
+            var customerData = Regex.Split(customerDataString, "[,:] ").Where(w => !String.IsNullOrWhiteSpace(w)).ToList();
+
+            var properties = typeof(Customer).GetProperties();
+            for (int index = 0; index < customerData.Count; index++)
+            {
+                foreach (var keyword in keywords)
+                {
+                    if (customerData[index].Contains(keyword.Word))
+                    {
+                        dynamic propertyValue;
+                        foreach (var property in properties)
+                        {
+                            if (property.Name == keyword.PropertyName)
+                            {
+                                if (property.GetValue(customer) != null) break;
+
+                                propertyValue = customerData[++index];
+
+                                if (propertyValue == "") break;
+
+                                if (property.Name == nameof(customer.AddressId))
+                                {
+                                    var address = customerData[++index] + ", " + propertyValue;
+                                    propertyValue = ParseAddress(address);
+                                }
+
+                                if (property.Name == nameof(customer.BirthDate)) propertyValue = DateTime.Parse(propertyValue);
+
+                                if (property.Name == nameof(customer.Email)) propertyValue = propertyValue.ToLower();
+
+                                if (property.Name == nameof(customer.LastName))
+                                {
+
+                                    if (keyword.Word.Contains(' ')) propertyValue = customerData[--index].Replace(keyword.Word, "");
+                                    var name = propertyValue.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                    customer.FirstName = RemoveBoundaryWhitespace(name[0].ToUpper());
+                                    customer.LastName = RemoveBoundaryWhitespace(name[1].ToUpper());
+                                }
+                                else
+                                {
+                                    if (propertyValue.GetType() == typeof(string))
+                                    {
+                                        propertyValue = RemoveBoundaryWhitespace(propertyValue);
+                                        if (propertyValue.ToLower() == "brak") propertyValue = null;
+                                    }
+                                    property.SetValue(customer, propertyValue);
+                                }
+                                break;
+                            }
+                        }
+
+                    }
+                }
+            }
+
+            return customer;
+        }
+
+        private Customer ParseWienerPdf(List<string> documentLines, List<Keyword> keywords)// parsing Gothaer files
+        {
+            Customer customer = new Customer();
+
+            var startIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[0].Word)));
+            var finishIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[1].Word)));
+
+            string[] wordsToSplit = new string[keywords.Count - 2];
+
+            string customerDataString = "";
+            for (int i = startIndex + 2; i < finishIndex; i++)
+            {
+                customerDataString += documentLines[i];
+                if (documentLines[i].Last() != '-') customerDataString += " ";
+            }
+
+            for (int i = 2; i < keywords.Count; i++)
+            {
+                wordsToSplit[i - 2] = keywords[i].Word;
+            }
+
+            var customerData = customerDataString.Split(wordsToSplit, StringSplitOptions.RemoveEmptyEntries).ToList();
+            customerData[0] = RemoveBoundaryWhitespace(customerData[0]);
+            //FirstName, LastName
+            char whiteSpace = ' ';
+            var name = RemoveBoundaryWhitespace(customerData[0]).Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            customer.FirstName = name[0].ToUpper();
+            customer.LastName = name[1].ToUpper();
+
+            //PESEL
+            customer.PESEL = RemoveBoundaryWhitespace(customerData[1]);
+
+            //Address
+            var address = RemoveBoundaryWhitespace(customerData[2]);
+
+            var splittedAddress = address.Split(',');
+            var zipCode = RemoveBoundaryWhitespace(splittedAddress.Last());
+            zipCode = zipCode.Replace(zipCode[2], '-');
+            var home = RemoveBoundaryWhitespace(splittedAddress.First());
+            if (splittedAddress.Length > 2)
+            {
+                if (splittedAddress[1].Contains(home)) home = RemoveBoundaryWhitespace(splittedAddress[1]);
+                else home += " " + RemoveBoundaryWhitespace(splittedAddress[1]);
+            }
+
+            address = zipCode + ", " + home;
+            customer.AddressId = ParseAddress(address);
+
+            //PHONE
+            if(customerDataString.Contains(keywords.First(k => k.PropertyName == nameof(customer.CellPhone)).Word))customer.CellPhone = RemoveBoundaryWhitespace(customerData[3]);
 
             return customer;
         }
