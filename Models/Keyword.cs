@@ -128,6 +128,11 @@ namespace InsuranceManagerApp.Models
                 new Keyword { Id = 72, CompanyId = 10, PropertyName = nameof(Customer.PESEL), Word = "Nr PESEL" },
                 new Keyword { Id = 73, CompanyId = 10, PropertyName = nameof(Customer.AddressId), Word = "Adres" },
                 new Keyword { Id = 74, CompanyId = 10, PropertyName = nameof(Customer.CellPhone), Word = "Telefon kontaktowy" },
+
+                //ERGO Hestia
+                new Keyword { Id = 75, CompanyId = 11, PropertyName = "StartIndex", Word = "Ubezpieczający/Ubezpieczony" },
+                new Keyword { Id = 78, CompanyId = 11, PropertyName = "FinishIndex", Word = "Ubezpieczony pojazd" },
+                new Keyword { Id = 79, CompanyId = 11, PropertyName = nameof(Customer.PESEL), Word = "PESEL" },
             };
         }
 

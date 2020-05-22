@@ -213,6 +213,10 @@ namespace InsuranceManagerApp
                 {
                     customer = ParseWienerPdf(documentLines, keywords);
                 }
+                else if (company.Name == "ERGOHestia")
+                {
+                    customer = ParseHestiaPdf(documentLines, keywords);
+                }
             }
             catch(Exception ex)
             {
@@ -1044,6 +1048,29 @@ namespace InsuranceManagerApp
 
             //PHONE
             if(customerDataString.Contains(keywords.First(k => k.PropertyName == nameof(customer.CellPhone)).Word))customer.CellPhone = RemoveBoundaryWhitespace(customerData[3]);
+
+            return customer;
+        }
+        private Customer ParseHestiaPdf(List<string> documentLines, List<Keyword> keywords)// parsing Gothaer files
+        {
+            Customer customer = new Customer();
+
+            var startIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[0].Word)));
+            var finishIndex = documentLines.IndexOf(documentLines.First(l => l.Contains(keywords[1].Word)));
+
+            var customerData = documentLines.GetRange(startIndex+1, finishIndex - startIndex);
+
+            //PESEL
+            customer.PESEL = RemoveBoundaryWhitespace(customerData[0]).Substring(customerData[0].Count() - 11);
+
+            //FirstName, LastName
+            var name = RemoveBoundaryWhitespace(customerData[0].Replace(customer.PESEL, "").Replace("PESEL:", "").Replace(",", "")).Split(' ');
+            customer.FirstName = name[0].ToUpper();
+            customer.LastName = name[1].ToUpper();
+
+            //Address
+            var address = RemoveBoundaryWhitespace(customerData[1]);
+            customer.AddressId = ParseAddress(address);
 
             return customer;
         }

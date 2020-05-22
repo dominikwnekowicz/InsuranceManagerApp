@@ -32,6 +32,7 @@ namespace InsuranceManagerApp.Models
                 new Company { Id = 8, KRS = "10623", NIP = "5262349108", Name = "Generali"},
                 new Company { Id = 9, KRS = "0000033882", NIP = "5240302393", Name = "GOTHAER"},
                 new Company { Id = 10, KRS = "0000033882", NIP = "5240302393", Name = "WIENER"},
+                new Company { Id = 11, KRS = "0000024812", NIP = "5850001690", Name = "ERGOHestia"},
             };
         }
 
