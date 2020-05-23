@@ -19,7 +19,7 @@ namespace InsuranceManagerApp
     public class ParsePdf
     {
         private readonly string folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "PlikiPdf");
-        PropertyInfo[] properties = typeof(Customer).GetProperties();
+        PropertyInfo[] customerProperties = typeof(Customer).GetProperties();
         private List<Customer> customers = new List<Customer>();
         private List<Address> addresses = new List<Address>();
         private List<Exception> exceptions = new List<Exception>();
@@ -28,7 +28,7 @@ namespace InsuranceManagerApp
         {
             public int Progress { get; set; }//in percents
             public int TimeLeft { get; set; }//in seconds
-        }
+        } //property for progress changed event
 
         public event EventHandler<ProgressEventArgs> ProgressChanged;
 
@@ -40,8 +40,7 @@ namespace InsuranceManagerApp
                 document = PDDocument.load(filePath);
                 PDFTextStripper stripper = new PDFTextStripper();
                 var text = stripper.getText(document);
-                var whitespace = text.First(c => String.IsNullOrWhiteSpace(c.ToString()));
-                return text.Replace(whitespace, ' ');
+                return text;
             }
             catch(Exception ex)
             {
@@ -72,15 +71,17 @@ namespace InsuranceManagerApp
             var countParsedFiles = 0;
             var progress = 0;
             var timeLeft = filesList.Count() * 0.35;
-            ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) });
+            ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) }); //setting progress when started
             foreach (var filePath in filesList)
             {
                 countParsedFiles++;
                 progress = countParsedFiles * 100 / filesList.Count();
                 timeLeft = (filesList.Count() - countParsedFiles) * 0.35;
-                ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) });
+                ProgressChanged?.Invoke(this, new ProgressEventArgs() { Progress = progress, TimeLeft = (int)Math.Ceiling(timeLeft) }); // setting progress
 
                 var documentText = "";
+
+                //trying extract normalized text
                 try
                 {
                     documentText = ExtractTextFromPdf(filePath).Normalize();
@@ -91,72 +92,85 @@ namespace InsuranceManagerApp
                     exceptions.Add(exception);
                     documentText = ExtractTextFromPdf(filePath);
                 }
-                var documentLines = documentText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
 
+
+                var documentLines = documentText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList(); //generating lines of text
+
+                //assigning company to pdf
                 for (int i = 0; i < documentText.Length; i++)
                 {
                     if (!char.IsLetterOrDigit(documentText[i]) || Char.IsWhiteSpace(documentText[i])) documentText = documentText.Replace(documentText[i].ToString(), "");
-                }
-                for(int l = 0; l < documentLines.Count; l++)
+                }//removing whitespace and symbols to find KRS, NIP and Company Name
+                var _company = new Company();
+                var companies = _company.GetCompanies();
+                Company company = new Company();
+                foreach (var item in companies)
+                {
+                    if (documentText.Contains(item.KRS) && documentText.Contains(item.NIP) && documentText.Contains(item.Name.ToLower()))
+                    {
+                        company = item;
+                        break;
+                    }
+                } //searching for company
+
+                //repairing not normalized whitespaces
+                for (int l = 0; l < documentLines.Count; l++)
                 {
                     for (int i = 0; i < documentLines[l].Count(); i++)
                     {
                         if (Char.IsWhiteSpace(documentLines[l][i])) documentLines[l] = documentLines[l].Replace(documentLines[l][i], ' ');
                     }
                 }
-                var _company = new Company();
-                var companies = _company.GetCompanies();
-                Company company = new Company();
-                foreach(var item in companies)
-                {
-                    if(documentText.Contains(item.KRS) && documentText.Contains(item.NIP) && documentText.Contains(item.Name.ToLower()))
-                    {
-                        company = item;
-                        break;
-                    }
-                }
+                
+                //parse data if found company and text loaded
                 if(company != null && documentText != null) ParseData(documentLines, Path.GetFileName(filePath), company);
             };//parsing evry file
+
             foreach(var exception in exceptions)
             {
                 Console.WriteLine(exception.Message);
-            }
+            } //writing parse exceptions to console
             Console.WriteLine("Błędów: " + exceptions.Count());
-            var addressProps = typeof(Address).GetProperties();
+
+            //rewriting data to CustomerDataViewModel
+            var addressProperties = typeof(Address).GetProperties();
             var viewModelProperties = typeof(CustomerDataViewModel).GetProperties();
             Customer customer = new Customer();
             foreach (var item in customers)
             { 
                 var customerData = new CustomerDataViewModel();
                 
-                foreach(var vmProp in viewModelProperties)
+                foreach(var viewModelProperty in viewModelProperties)
                 {
-                    foreach(var property in properties)
+                    foreach(var customerProperty in customerProperties)
                     {
                         dynamic value;
-                        if (property.Name == nameof(customer.AddressId))
+                        if (customerProperty.Name == nameof(customer.AddressId))
                         {
                             var address = addresses.First(a => a.Id == item.AddressId);
-                            foreach(var prop in addressProps)
+                            foreach(var addressProperty in addressProperties)
                             {
-                                if (prop.Name == vmProp.Name)
+                                if (addressProperty.Name == viewModelProperty.Name)
                                 {
-                                    value = prop.GetValue(address);
-                                    vmProp.SetValue(customerData, value);
+                                    value = addressProperty.GetValue(address);
+                                    viewModelProperty.SetValue(customerData, value);
                                 }
                             }
                         }//adding address data to view model
-                        else if(property.Name == vmProp.Name)
+                        else if(customerProperty.Name == viewModelProperty.Name)
                         {
-                            value = property.GetValue(item);
-                            vmProp.SetValue(customerData, value);
+                            value = customerProperty.GetValue(item);
+                            viewModelProperty.SetValue(customerData, value);
                         }//adding customer data
                     }
                 }
-                customerDatas.Add(customerData);
-            } //adding parsed customers to observableCollection
+                
+                
+                customerDatas.Add(customerData); //adding customer data to show in DataGrid
+            } // rewriting data
+
             return customerDatas;
-        }
+        } // main function, calls parsing function for every file
         
         
 
@@ -452,7 +466,7 @@ namespace InsuranceManagerApp
                     if (customerData[index] == keyword.Word)
                     {
                         dynamic propertyValue;
-                        foreach (var property in properties)
+                        foreach (var property in customerProperties)
                         {
                             if (property.Name == keyword.PropertyName)
                             {
@@ -512,7 +526,7 @@ namespace InsuranceManagerApp
                     if (customerData[index].Contains(keyword.Word))
                     {
                         dynamic propertyValue;
-                        foreach (var property in properties)
+                        foreach (var property in customerProperties)
                         {
                             if (property.Name == keyword.PropertyName)
                             {
@@ -655,7 +669,7 @@ namespace InsuranceManagerApp
                     if (customerData[index].Contains(keyword.Word))
                     {
                         dynamic propertyValue;
-                        foreach (var property in properties)
+                        foreach (var property in customerProperties)
                         {
                             if (property.Name == keyword.PropertyName)
                             {
@@ -788,7 +802,7 @@ namespace InsuranceManagerApp
                     if (customerData[index].Contains(keyword.Word))
                     {
                         dynamic propertyValue;
-                        foreach (var property in properties)
+                        foreach (var property in customerProperties)
                         {
                             if (property.Name == keyword.PropertyName)
                             {
